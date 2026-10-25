@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Лента</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Лента">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#14102b">
+<style>
+  :root {
+    --bg1: #14102b; --bg2: #1d1747; --text: #f3f1ff; --hint: #a79fd6;
+    --card: rgba(255,255,255,0.07); --card-border: rgba(167,159,214,0.18);
+    --accent1: #7c5cff; --accent2: #4f8cff; --btn-text: #ffffff;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; color: var(--text);
+    font-family: -apple-system, Roboto, "Segoe UI", sans-serif; }
+  html { background: var(--bg1); }
+  body { background: linear-gradient(160deg, var(--bg1) 0%, var(--bg2) 100%) fixed;
+    padding-top: env(safe-area-inset-top); padding-bottom: 190px; min-height: 100vh; }
+  header { padding: 20px 18px 10px; font-size: 28px; font-weight: 800; letter-spacing: 0.3px;
+    background: linear-gradient(90deg, #a98bff, #6fb0ff); -webkit-background-clip: text;
+    background-clip: text; color: transparent; width: fit-content; }
+  .tabs { display: flex; gap: 8px; padding: 4px 16px 14px; position: sticky; top: 0; z-index: 2;
+    background: linear-gradient(180deg, var(--bg1) 70%, transparent); }
+  .tab { flex: 1; padding: 11px; border: 1px solid var(--card-border); border-radius: 14px;
+    background: var(--card); color: var(--hint); font-size: 16px; font-weight: 600; }
+  .tab.active { background: linear-gradient(135deg, var(--accent1), var(--accent2));
+    color: var(--btn-text); border-color: transparent; box-shadow: 0 6px 18px rgba(124,92,255,0.35); }
+  .list { padding: 0 16px; display: grid; gap: 12px; }
+  .item { display: flex; gap: 12px; background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 18px; padding: 10px; align-items: center; }
+  .thumb { width: 68px; height: 68px; border-radius: 14px; flex: none;
+    background: linear-gradient(135deg, #3a2d7a, #2a4a8f) center/cover;
+    display: flex; align-items: center; justify-content: center; font-size: 28px; }
+  .info { flex: 1; min-width: 0; }
+  .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .host { color: var(--hint); font-size: 13px; margin-top: 3px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .del { border: 0; background: none; color: var(--hint); font-size: 20px; padding: 8px; }
+  .empty { text-align: center; color: var(--hint); padding: 50px 24px; line-height: 1.6; font-size: 16px; }
+  .add { position: fixed; left: 0; right: 0; bottom: 0; z-index: 3;
+    padding: 14px 16px calc(16px + env(safe-area-inset-bottom));
+    background: rgba(20,16,43,0.92); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    display: grid; gap: 8px; border-top: 1px solid var(--card-border); }
+  .add input { width: 100%; padding: 13px; border-radius: 14px; border: 1px solid var(--card-border);
+    background: rgba(255,255,255,0.06); color: var(--text); font-size: 16px; outline: none; }
+  .add input::placeholder { color: var(--hint); }
+  .add input:focus { border-color: var(--accent1); }
+  .add button { padding: 14px; border: 0; border-radius: 14px; font-size: 16px; font-weight: 700;
+    background: linear-gradient(135deg, var(--accent1), var(--accent2)); color: var(--btn-text);
+    box-shadow: 0 6px 18px rgba(124,92,255,0.35); }
+</style>
+</head>
+<body>
+<header>Лента</header>
+<div class="tabs">
+  <button class="tab active" data-tab="music">🎵 Музыка</button>
+  <button class="tab" data-tab="video">🎬 Видео</button>
+</div>
+<div class="list" id="list"></div>
+<div class="add">
+  <input id="title" placeholder="Название (необязательно)">
+  <input id="url" placeholder="Ссылка (YouTube и другие)" inputmode="url">
+  <button id="addBtn">Добавить в подборку</button>
+</div>
+
+<script>
+var tg = null;
+function initTelegram() {
+  try {
+    tg = window.Telegram && window.Telegram.WebApp;
+    if (tg && tg.initData) { tg.ready(); tg.expand(); } else { tg = null; }
+  } catch (e) { tg = null; }
+}
+try {
+  var sc = document.createElement('script');
+  sc.src = 'https://telegram.org/js/telegram-web-app.js';
+  sc.async = true;
+  sc.onload = initTelegram;
+  sc.onerror = function () {};
+  document.head.appendChild(sc);
+} catch (e) {}
+
+var tab = 'music';
+var data = { music: [], video: [] };
+try {
+  var saved = JSON.parse(localStorage.getItem('lenta') || 'null');
+  if (saved && saved.music && saved.video) data = saved;
+} catch (e) {}
+
+function save() { try { localStorage.setItem('lenta', JSON.stringify(data)); } catch (e) {} }
+
+function youtubeId(u) {
+  var m = u.match(/(?:youtu\.be\/|v=|shorts\/|embed\/)([\w-]{11})/);
+  return m ? m[1] : null;
+}
+function hostOf(u) { try { return new URL(u).hostname.replace('www.', ''); } catch (e) { return u; } }
+function openUrl(u) {
+  if (tg && tg.openLink) { tg.openLink(u); } else { window.open(u, '_blank'); }
+}
+
+function render() {
+  var list = document.getElementById('list');
+  list.innerHTML = '';
+  var items = data[tab];
+  if (!items.length) {
+    list.innerHTML = '<div class="empty">Пока пусто.<br>Вставь ссылку внизу и нажми «Добавить».</div>';
+    return;
+  }
+  items.forEach(function (it, i) {
+    var el = document.createElement('div');
+    el.className = 'item';
+    var id = youtubeId(it.url);
+    var thumb = document.createElement('div');
+    thumb.className = 'thumb';
+    if (id) thumb.style.backgroundImage = 'url(https://img.youtube.com/vi/' + id + '/mqdefault.jpg)';
+    else thumb.textContent = tab === 'music' ? '🎵' : '🎬';
+    var info = document.createElement('div');
+    info.className = 'info';
+    var t = document.createElement('div'); t.className = 'title'; t.textContent = it.title;
+    var h = document.createElement('div'); h.className = 'host'; h.textContent = hostOf(it.url);
+    info.appendChild(t); info.appendChild(h);
+    var del = document.createElement('button');
+    del.className = 'del'; del.textContent = '✕';
+    del.onclick = function (e) { e.stopPropagation(); data[tab].splice(i, 1); save(); render(); };
+    el.onclick = function () { openUrl(it.url); };
+    el.appendChild(thumb); el.appendChild(info); el.appendChild(del);
+    list.appendChild(el);
+  });
+}
+
+document.querySelectorAll('.tab').forEach(function (b) {
+  b.onclick = function () {
+    tab = b.dataset.tab;
+    document.querySelectorAll('.tab').forEach(function (x) { x.classList.toggle('active', x === b); });
+    render();
+  };
+});
+
+document.getElementById('addBtn').onclick = function () {
+  var url = document.getElementById('url').value.trim();
+  if (!url) return;
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  var title = document.getElementById('title').value.trim() || hostOf(url);
+  data[tab].unshift({ title: title, url: url });
+  save();
+  document.getElementById('url').value = '';
+  document.getElementById('title').value = '';
+  render();
+};
+
+try { render(); } catch (e) { document.getElementById('list').textContent = 'Ошибка: ' + e.message; }
+</script>
+</body>
+</html>
